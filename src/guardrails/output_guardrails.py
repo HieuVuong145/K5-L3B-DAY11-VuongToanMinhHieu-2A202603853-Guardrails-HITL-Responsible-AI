@@ -47,6 +47,11 @@ def content_filter(response: str) -> dict:
         # - National ID (CMND/CCCD): r"\b\d{9}\b|\b\d{12}\b"
         # - API key pattern: r"sk-[a-zA-Z0-9-]+"
         # - Password pattern: r"password\s*[:=]\s*\S+"
+        "vn_phone": r"0\d{9,10}",                                  # SĐT VN 10-11 số bắt đầu bằng 0
+        "email": r"[\w.-]+@[\w.-]+\.[a-zA-Z]{2,}",                # Định dạng email
+        "national_id": r"\b\d{9}\b|\b\d{12}\b",                   # CMND (9 số) hoặc CCCD (12 số)
+        "api_key": r"sk-[a-zA-Z0-9-]+",                           # API Key bắt đầu bằng sk-
+        "password": r"(?:password\s*[:=]?\s*\S+|admin123)",       # Mật khẩu hoặc từ khóa secret admin123
     }
 
     for name, pattern in PII_PATTERNS.items():
@@ -181,6 +186,22 @@ class OutputGuardrailPlugin(base_plugin.BasePlugin):
         #    - Increment self.blocked_count
         # 3. Return llm_response (possibly modified)
 
+        filter_result = content_filter(response_text)
+        if not filter_result["safe"]:
+            self.redacted_count += 1
+            llm_response.content = types.Content(
+                role="model",
+                parts=[types.Part.from_text(text=filter_result["redacted"])],
+            )
+        
+        if self.use_llm_judge:
+            judge_res = await llm_safety_check(response_text)
+            if not judge_res.get("safe", True):
+                self.blocked_count += 1
+                llm_response.content = types.Content(
+                    role="model",
+                    parts=[types.Part.from_text(text="I cannot fulfill this request due to safety policies.")],
+                )
         return llm_response  # TODO: modify if needed
 
 
